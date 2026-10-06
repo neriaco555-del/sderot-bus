@@ -75,7 +75,7 @@ function dedupe(stops){
 }
 function getCityStops(city){
   if(stopCache[city]) return Promise.resolve(stopCache[city]);
-  return fetchJSON(API+'/gtfs_stops/list?limit=1000&city='+encodeURIComponent(city), 25000).then(function(s){
+  return fetchJSON(API+'/gtfs_stops/list?limit=500&city='+encodeURIComponent(city), 25000).then(function(s){
     s = dedupe(s||[]);
     stopCache[city] = s;
     return s;
@@ -125,32 +125,58 @@ function liveForStop(stop, box, btn){
   btn.disabled = true;
   box.innerHTML = '<div class="meta">טוען לוז וזמנים חיים...</div>';
   var now = new Date();
-  var d0 = new Date(now.getTime()-2*86400000);
-  var p = function(d){ return d.toISOString(); };
-  var q1 = API+'/gtfs_ride_stops/list?limit=400&gtfs_stop__code='+stop.code
-    + '&arrival_time_from='+encodeURIComponent(p(new Date(Date.UTC(d0.getUTCFullYear(),d0.getUTCMonth(),d0.getUTCDate(),0,0,0))))
-    + '&arrival_time_to='+encodeURIComponent(p(new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate(),23,59,0))))
+  var D = stop.date || todayKey();
+  var base = Date.parse(D+'T00:00:00Z');
+  if(isNaN(base)){ base = Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate(),0,0,0); D = todayKey(); }
+  var q1 = API+'/gtfs_ride_stops/list?limit=200&gtfs_stop__code='+stop.code
+    + '&arrival_time_from='+encodeURIComponent(new Date(base-3*3600000).toISOString())
+    + '&arrival_time_to='+encodeURIComponent(new Date(base+21*3600000).toISOString())
     + '&order_by=arrival_time%20asc';
-  var d = 0.02;
-  var q2 = API+'/siri_vehicle_locations/list?limit=80'
-    + '&lat__greater_or_equal='+(stop.lat-d)+'&lat__lower_or_equal='+(stop.lat+d)
-    + '&lon__greater_or_equal='+(stop.lon-d)+'&lon__lower_or_equal='+(stop.lon+d)
-    + '&order_by=recorded_at_time%20desc';
-  Promise.all([fetchJSON(q1,25000).catch(function(){return [];}), fetchJSON(q2,25000).catch(function(){return [];})]).then(function(all){
-    var rides = all[0]||[], vs = all[1]||[];
+  var rowsByNum = {};
+  var serving = {};
+  fetchJSON(q1,20000).then(function(rides){
+    rides = rides||[];
     if(!rides.length){ box.innerHTML = '<div class="meta">אין לוז לתחנה זו.</div>'; btn.disabled=false; btn.textContent='רענן זמנים'; return; }
-    var D = '';
-    rides.forEach(function(r){ var k=dayKey(r.arrival_time); if(k>D) D=k; });
-    var dayRides = rides.filter(function(r){ return dayKey(r.arrival_time)===D; });
-    var serving = {}, order = [];
-    dayRides.forEach(function(r){
+    rides.forEach(function(r){
       var sn = r.gtfs_route__route_short_name || '?';
-      if(!serving[sn]){ serving[sn]={num:sn, dest:(r.gtfs_route__route_long_name||'').split('<->')[0], op:r.gtfs_route__agency_name||''}; order.push(sn); }
+      if(!serving[sn]){ serving[sn]={num:sn, dest:(r.gtfs_route__route_long_name||'').split('<->')[0], op:r.gtfs_route__agency_name||''}; }
     });
     var tk = todayKey();
     var cutoff = (D===tk) ? now.getTime() : Date.parse(D+'T'+('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2)+':00+03:00');
-    var up = dayRides.filter(function(r){ return Date.parse(r.arrival_time) >= cutoff-60000; }).slice(0,8);
-    var fresh = vs.filter(function(v){ var a=agoMin(v.recorded_at_time); return a>=0 && a<=20 && v.lat!=null; });
+    var up = rides.filter(function(r){ return Date.parse(r.arrival_time) >= cutoff-60000; }).slice(0,8);
+    box.innerHTML = '';
+    var note = document.createElement('div');
+    note.className = 'meta';
+    note.textContent = D===tk ? 'לוז להיום:' : 'לוז מתוכנן ('+D+'):';
+    box.appendChild(note);
+    if(!up.length){
+      var e = document.createElement('div');
+      e.className = 'meta';
+      e.textContent = 'אין עוד נסיעות להיום בתחנה זו.';
+      box.appendChild(e);
+    }
+    up.forEach(function(r){
+      var sn = r.gtfs_route__route_short_name || '?';
+      var info = serving[sn]||{num:sn,dest:'',op:''};
+      var dv = document.createElement('div');
+      dv.className = 'bus';
+      dv.innerHTML = '<div class="num">קו ' + esc(info.num) + ' - ' + esc(fmtTime(r.arrival_time)) + '</div>'
+        + '<div class="sub">מתוכנן' + (info.op?' · '+esc(info.op):'') + (info.dest?'<br>'+esc(info.dest):'') + '</div>';
+      box.appendChild(dv);
+      if(!rowsByNum[sn]) rowsByNum[sn] = [];
+      rowsByNum[sn].push(dv);
+    });
+    say('לוז נטען. בודק חיים...');
+    btn.disabled = false;
+    btn.textContent = 'רענן זמנים';
+  var d = 0.02;
+  var q2 = API+'/siri_vehicle_locations/list?limit=50'
+    + '&lat__greater_or_equal='+(stop.lat-d)+'&lat__lower_or_equal='+(stop.lat+d)
+    + '&lon__greater_or_equal='+(stop.lon-d)+'&lon__lower_or_equal='+(stop.lon+d)
+    + '&order_by=recorded_at_time%20desc';
+  fetchJSON(q2,15000).then(function(vs){
+    var fresh = (vs||[]).filter(function(v){ var a=agoMin(v.recorded_at_time); return a>=0 && a<=20 && v.lat!=null; });
+    if(!fresh.length){ say('לוז נטען. אין חיים כרגע.'); return; }
     var lrs = [];
     fresh.forEach(function(v){ if(lrs.indexOf(v.siri_route__line_ref)<0) lrs.push(v.siri_route__line_ref); });
     batchLineInfo(lrs).then(function(lmap){
@@ -162,33 +188,21 @@ function liveForStop(stop, box, btn){
         var cur = liveByNum[info.num];
         if(!cur || dd<cur.d) liveByNum[info.num] = {d:dd, age:agoMin(v.recorded_at_time)};
       });
-      box.innerHTML = '';
-      var note = document.createElement('div');
-      note.className = 'meta';
-      note.textContent = D===tk ? 'לוז להיום:' : 'לוז מתוכנן ('+D+', יתכן שינוי):';
-      box.appendChild(note);
-      if(!up.length){
-        var e = document.createElement('div');
-        e.className = 'meta';
-        e.textContent = 'אין עוד נסיעות מתוכננות להיום בתחנה זו.';
-        box.appendChild(e);
-      }
-      up.forEach(function(r){
-        var sn = r.gtfs_route__route_short_name || '?';
-        var info = serving[sn]||{num:sn,dest:'',op:''};
-        var lv = liveByNum[sn];
-        var dv = document.createElement('div');
-        dv.className = 'bus';
-        var h = '<div class="num">קו ' + esc(info.num) + ' - ' + esc(fmtTime(r.arrival_time)) + '</div>';
-        if(lv){ h += '<div class="eta">🟢 חי - ' + Math.round(lv.d*1000) + ' מטר מהתחנה</div><div class="sub">נראה לפני '+lv.age+' דקות</div>'; }
-        else { h += '<div class="sub">מתוכנן' + (info.op?' · '+esc(info.op):'') + (info.dest?'<br>'+esc(info.dest):'') + '</div>'; }
-        dv.innerHTML = h;
-        box.appendChild(dv);
+      var n = 0;
+      Object.keys(liveByNum).forEach(function(sn){
+        (rowsByNum[sn]||[]).forEach(function(dv){
+          if(dv.querySelector('.eta')) return;
+          var lv = liveByNum[sn];
+          var b = document.createElement('div');
+          b.className = 'eta';
+          b.textContent = '🟢 חי - ' + Math.round(lv.d*1000) + ' מטר · לפני '+lv.age+' דקות';
+          dv.appendChild(b);
+          n++;
+        });
       });
-      say('עודכן. ' + up.length + ' נסיעות.');
-      btn.disabled = false;
-      btn.textContent = 'רענן זמנים';
+      say(n ? 'עודכן + ' + n + ' חיים.' : 'לוז נטען. אין חיים כרגע.');
     });
+  }).catch(function(){ say('לוז נטען. חיים נכשלו.'); });
   }).catch(function(){
     box.innerHTML = '<div class="meta">נכשל בטעינה. נסה שוב.</div>';
     btn.disabled = false;
