@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=240, initial-scale=1">
+<title>אוטובוסים שדרות</title>
+<style>
+body{font-family:Arial,sans-serif;background:#fff;color:#000;margin:0;padding:4px;max-width:232px;font-size:18px}
+h1{font-size:20px;margin:4px 0;text-align:center;background:#0066cc;color:#fff;padding:6px}
+input{width:96%;font-size:18px;padding:6px;margin:4px 0;border:2px solid #0066cc}
+button{display:block;width:100%;font-size:20px;padding:10px;margin:4px 0;background:#0066cc;color:#fff;border:none;font-weight:bold}
+button:focus{background:#ff6600}
+a.big{display:block;font-size:19px;padding:10px;margin:6px 0;background:#eef;border:2px solid #0066cc;color:#000;text-decoration:none;font-weight:bold}
+a.big:focus{background:#ffcc00}
+.stop{border:2px solid #000;margin:6px 0;padding:6px}
+.stop b{font-size:19px}
+.meta{font-size:15px;color:#333}
+#status{font-size:16px;background:#ffffcc;padding:6px;margin:4px 0}
+small{font-size:13px;color:#555}
+hr{border:1px solid #999}
+</style>
+</head>
+<body>
+<h1>🚌 אוטובוסים</h1>
+<label for="addr"><b>כתובת:</b></label>
+<input id="addr" type="text" value="יצחק נבון 52 שדרות">
+<button id="b1" accesskey="1">1 - חפש תחנות לידי</button>
+<hr>
+<label for="code"><b>או מספר תחנה:</b></label>
+<input id="code" type="text" inputmode="numeric" placeholder="למשל 3948">
+<button id="b2" accesskey="2">2 - זמנים לתחנה</button>
+<div id="status">מוכן. לחץ 1 לחיפוש.</div>
+<div id="out"></div>
+<small>מקורות אמיתיים: OpenStreetMap + הסדנא לידע ציבורי (נתוני משרד התחבורה) + curlbus זמן אמת. בית: יצחק נבון 52 שדרות.</small>
+<script>
+var HOME_LAT = 31.5357653, HOME_LON = 34.5990550;
+var statusEl = document.getElementById('status');
+var outEl = document.getElementById('out');
+function say(t){ statusEl.textContent = t; }
+function distKm(lat1,lon1,lat2,lon2){
+  var R=6371,dLa=(lat2-lat1)*Math.PI/180,dLo=(lon2-lon1)*Math.PI/180;
+  var a=Math.sin(dLa/2)*Math.sin(dLa/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLo/2)*Math.sin(dLo/2);
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+function stopBlock(s, km){
+  var d = document.createElement('div');
+  d.className = 'stop';
+  var m = Math.round(km*1000);
+  d.innerHTML = '<b>' + esc(s.name||'תחנה') + '</b><div class="meta">קוד: ' + s.code + ' | ' + s.city + '<br>מרחק: ' + m + ' מטר</div>';
+  var a = document.createElement('a');
+  a.className = 'big';
+  a.href = 'https://curlbus.app/' + s.code;
+  a.textContent = 'זמנים חיים ← ' + s.code;
+  d.appendChild(a);
+  return d;
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function fetchJSON(url, ms){
+  ms = ms || 20000;
+  var c = new AbortController();
+  var t = setTimeout(function(){ c.abort(); }, ms);
+  return fetch(url, {signal: c.signal, headers: {'Accept':'application/json'}}).then(function(r){
+    clearTimeout(t);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).catch(function(e){ clearTimeout(t); throw e; });
+}
+function dedupe(stops){
+  var seen = {}, out = [];
+  stops.sort(function(a,b){ return (a.date<b.date)?1:-1; });
+  for(var i=0;i<stops.length;i++){
+    var c = stops[i].code;
+    if(!seen[c]){ seen[c]=1; out.push(stops[i]); }
+  }
+  return out;
+}
+function searchAddr(){
+  outEl.innerHTML=''; 
+  var q = document.getElementById('addr').value || 'יצחק נבון 52 שדרות';
+  say('מחפש כתובת...');
+  var isDefault = q.indexOf('יצחק נבון')>=0 && q.indexOf('שדרות')>=0;
+  var geoP = isDefault
+    ? Promise.resolve({lat:HOME_LAT, lon:HOME_LON, city:'שדרות'})
+    : fetchJSON('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=il&q='+encodeURIComponent(q+', ישראל'), 15000).then(function(g){
+        if(!g||!g.length) throw new Error('כתובת לא נמצאה');
+        var a = g[0].address||{};
+        var city = a.city||a.town||a.village||a.suburb||a.county||'שדרות';
+        return {lat:parseFloat(g[0].lat), lon:parseFloat(g[0].lon), city:city};
+      });
+  geoP.then(function(geo){
+    say('מוצא תחנות ליד '+geo.city+'...');
+    return fetchJSON('https://open-bus-stride-api.hasadna.org.il/gtfs_stops/list?limit=500&city='+encodeURIComponent(geo.city), 25000).then(function(stops){
+      if(!stops||!stops.length) throw new Error('אין תחנות ל'+geo.city);
+      stops = dedupe(stops);
+      for(var i=0;i<stops.length;i++){
+        stops[i]._d = distKm(geo.lat,geo.lon,stops[i].lat,stops[i].lon);
+      }
+      stops.sort(function(a,b){return a._d-b._d;});
+      var near = stops.slice(0,6);
+      say('נמצאו '+near.length+' תחנות קרובות:');
+      outEl.innerHTML='';
+      for(var j=0;j<near.length;j++){ outEl.appendChild(stopBlock(near[j], near[j]._d)); }
+      document.querySelector('#out a.big').focus();
+    });
+  }).catch(function(e){
+    say('שגיאה: '+(e.message||e)+'. נסה מספר תחנה למטה.');
+  });
+}
+function searchCode(){
+  outEl.innerHTML='';
+  var code = (document.getElementById('code').value||'').replace(/\D/g,'');
+  if(!code){ say('כתוב מספר תחנה, למשל 3948'); return; }
+  say('בודק תחנה '+code+'...');
+  fetchJSON('https://open-bus-stride-api.hasadna.org.il/gtfs_stops/list?limit=3&code='+code, 20000).then(function(stops){
+    if(stops&&stops.length){
+      var s = dedupe(stops)[0];
+      outEl.innerHTML='';
+      outEl.appendChild(stopBlock(s, 0));
+      say(s.name+' ('+s.city+'):');
+    } else {
+      say('תחנה '+code+' - פותח זמנים:');
+    }
+    var a = document.createElement('a');
+    a.className='big'; a.href='https://curlbus.app/'+code;
+    a.textContent='זמנים חיים ← '+code;
+    outEl.appendChild(a); a.focus();
+  }).catch(function(){
+    say('פותח זמנים לתחנה '+code+':');
+    var a2 = document.createElement('a');
+    a2.className='big'; a2.href='https://curlbus.app/'+code;
+    a2.textContent='זמנים חיים ← '+code;
+    outEl.appendChild(a2); a2.focus();
+  });
+}
+document.getElementById('b1').onclick = searchAddr;
+document.getElementById('b2').onclick = searchCode;
+window.onload = function(){ searchAddr(); };
+</script>
+</body>
+</html>
