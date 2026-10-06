@@ -11,11 +11,14 @@ h2{font-size:18px;margin:8px 0 2px;background:#eee;padding:4px}
 input{width:96%;font-size:18px;padding:6px;margin:4px 0;border:2px solid #0066cc}
 button{display:block;width:100%;font-size:20px;padding:10px;margin:4px 0;background:#0066cc;color:#fff;border:none;font-weight:bold}
 button:focus{background:#ff6600}
-a.big{display:block;font-size:19px;padding:10px;margin:6px 0;background:#eef;border:2px solid #0066cc;color:#000;text-decoration:none;font-weight:bold}
-a.big:focus{background:#ffcc00}
 .stop{border:2px solid #000;margin:6px 0;padding:6px}
 .stop b{font-size:19px}
 .meta{font-size:15px;color:#333}
+.live{border-top:2px dashed #0066cc;margin-top:6px;padding-top:6px}
+.bus{background:#e8f5e9;border:2px solid #2e7d32;margin:6px 0;padding:8px}
+.bus .num{font-size:26px;font-weight:bold}
+.bus .eta{font-size:22px;font-weight:bold;color:#1b5e20}
+.bus .sub{font-size:15px}
 #status{font-size:16px;background:#ffffcc;padding:6px;margin:4px 0}
 small{font-size:13px;color:#555}
 hr{border:1px solid #999}
@@ -34,19 +37,25 @@ hr{border:1px solid #999}
 <button id="b2" accesskey="2">2 - זמנים לתחנה</button>
 <div id="status">מוכן. לחץ 1 לחיפוש.</div>
 <div id="out"></div>
-<small>מקורות אמיתיים: OpenStreetMap + הסדנא לידע ציבורי (נתוני משרד התחבורה) + curlbus זמן אמת. בית: יצחק נבון 52 שדרות. טיפ: כתוב עיר בתיבה ואז 3, למשל: אשקלון.</small>
+<small>זמנים חיים: הסדנא לידע ציבורי (נתוני משרד התחבורה). בית: יצחק נבון 52 שדרות. טיפ: כתוב עיר בתיבה ואז 3.</small>
 <script>
 var HOME_LAT = 31.5357653, HOME_LON = 34.5990550, HOME_CITY = 'שדרות';
+var API = 'https://open-bus-stride-api.hasadna.org.il';
 var statusEl = document.getElementById('status');
 var outEl = document.getElementById('out');
 var addrEl = document.getElementById('addr');
-var stopCache = {};
+var stopCache = {}, lineCache = {};
 function say(t){ statusEl.textContent = t; }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
 function distKm(lat1,lon1,lat2,lon2){
   var R=6371,dLa=(lat2-lat1)*Math.PI/180,dLo=(lon2-lon1)*Math.PI/180;
   var a=Math.sin(dLa/2)*Math.sin(dLa/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLo/2)*Math.sin(dLo/2);
   return 2*R*Math.asin(Math.sqrt(a));
+}
+function agoMin(iso){
+  var t = Date.parse(iso);
+  if(isNaN(t)) return -1;
+  return Math.max(0, Math.round((Date.now()-t)/60000));
 }
 function fetchJSON(url, ms){
   ms = ms || 22000;
@@ -66,11 +75,23 @@ function dedupe(stops){
 }
 function getCityStops(city){
   if(stopCache[city]) return Promise.resolve(stopCache[city]);
-  return fetchJSON('https://open-bus-stride-api.hasadna.org.il/gtfs_stops/list?limit=1000&city='+encodeURIComponent(city), 25000).then(function(s){
+  return fetchJSON(API+'/gtfs_stops/list?limit=1000&city='+encodeURIComponent(city), 25000).then(function(s){
     s = dedupe(s||[]);
     stopCache[city] = s;
     return s;
   });
+}
+function lineInfo(line_ref){
+  if(lineCache[line_ref]) return Promise.resolve(lineCache[line_ref]);
+  return fetchJSON(API+'/siri_rides/list?limit=1&siri_route__line_refs='+line_ref, 20000).then(function(r){
+    var info = {num:String(line_ref), dest:'', op:''};
+    if(r && r.length){
+      if(r[0].gtfs_route__route_short_name) info.num = r[0].gtfs_route__route_short_name;
+      info.dest = r[0].gtfs_route__route_long_name||'';
+      info.op = r[0].gtfs_route__agency_name||'';
+    }
+    lineCache[line_ref]=info; return info;
+  }).catch(function(){ var f={num:String(line_ref),dest:'',op:''}; lineCache[line_ref]=f; return f; });
 }
 function keywords(q, city){
   var skip = ['רחוב','רח','מספר','ליד','על','יד','של','את','עם','אל'];
@@ -78,16 +99,75 @@ function keywords(q, city){
     return x.length>2 && !/^\d+$/.test(x) && skip.indexOf(x)<0;
   });
 }
+function liveForStop(stop, box, btn){
+  btn.disabled = true;
+  box.innerHTML = '<div class="meta">טוען זמנים חיים...</div>';
+  var d = 0.02;
+  var url = API+'/siri_vehicle_locations/list?limit=80'
+    + '&lat__greater_or_equal='+(stop.lat-d)+'&lat__lower_or_equal='+(stop.lat+d)
+    + '&lon__greater_or_equal='+(stop.lon-d)+'&lon__lower_or_equal='+(stop.lon+d)
+    + '&order_by=recorded_at_time%20desc';
+  fetchJSON(url, 25000).then(function(vs){
+    vs = vs||[];
+    var fresh = vs.filter(function(v){ var a=agoMin(v.recorded_at_time); return a>=0 && a<=25; });
+    if(!fresh.length){ box.innerHTML = '<div class="meta">אין אוטובוסים חיים כרגע ליד תחנה זו.</div>'; btn.disabled=false; say('אין תנועה חיה כרגע.'); return; }
+    var byLine = {};
+    fresh.forEach(function(v){
+      var lr = v.siri_route__line_ref;
+      if(!byLine[lr]) byLine[lr]=[];
+      byLine[lr].push(v);
+    });
+    var rows = Object.keys(byLine).map(function(lr){
+      var best = null, bestD = 1e9;
+      byLine[lr].forEach(function(v){
+        if(v.lat==null||v.lon==null) return;
+        var dd = distKm(stop.lat,stop.lon,v.lat,v.lon);
+        if(dd<bestD){ bestD=dd; best=v; }
+      });
+      return best ? {lr:lr, v:best, d:bestD} : null;
+    }).filter(function(x){return x;});
+    rows.sort(function(a,b){return a.d-b.d;});
+    rows = rows.slice(0,6);
+    Promise.all(rows.map(function(r){ return lineInfo(r.lr); })).then(function(infos){
+      box.innerHTML = '';
+      rows.forEach(function(r, i){
+        var info = infos[i];
+        var age = agoMin(r.v.recorded_at_time);
+        var mins = Math.round(r.d*1000);
+        var etaTxt = 'בתחנה / עומד';
+        var v = r.v.velocity;
+        if(v && v>3){ etaTxt = 'מגיע בעוד כ-'+Math.max(1,Math.round(mins/(v*1000/3600)/60))+' דקות (משוער)'; }
+        else if(mins>150){ etaTxt = 'בדרך - '+mins+' מטר מהתחנה'; }
+        var dest = info.dest ? info.dest.split('<->')[0] : '';
+        var dv = document.createElement('div');
+        dv.className = 'bus';
+        dv.innerHTML = '<div class="num">קו ' + esc(info.num) + '</div>'
+          + '<div class="eta">' + esc(etaTxt) + '</div>'
+          + '<div class="sub">' + esc(dest) + (info.op?'<br>'+esc(info.op):'') + '<br>נראה לפני '+age+' דקות</div>';
+        box.appendChild(dv);
+      });
+      say('עודכן עכשיו. ' + rows.length + ' קווים חיים.');
+      btn.disabled = false;
+      btn.textContent = 'רענן זמנים';
+    });
+  }).catch(function(){
+    box.innerHTML = '<div class="meta">נכשל בטעינה. נסה שוב.</div>';
+    btn.disabled = false;
+    say('שגיאת רשת.');
+  });
+}
 function stopBlock(s, km){
   var d = document.createElement('div');
   d.className = 'stop';
   var where = (km>0.05) ? '<br>מרחק: ' + Math.round(km*1000) + ' מטר' : '';
   d.innerHTML = '<b>' + esc(s.name||'תחנה') + '</b><div class="meta">קוד: ' + s.code + ' | ' + esc(s.city||'') + where + '</div>';
-  var a = document.createElement('a');
-  a.className = 'big';
-  a.href = 'https://curlbus.app/' + s.code;
-  a.textContent = 'זמנים חיים ← ' + s.code;
-  d.appendChild(a);
+  var box = document.createElement('div');
+  box.className = 'live';
+  var btn = document.createElement('button');
+  btn.textContent = 'זמנים חיים';
+  btn.onclick = function(){ liveForStop(s, box, btn); };
+  d.appendChild(btn);
+  d.appendChild(box);
   return d;
 }
 function showTitle(t){
@@ -103,7 +183,7 @@ function searchAddr(){
   var geoP = isHome
     ? Promise.resolve({lat:HOME_LAT, lon:HOME_LON, city:HOME_CITY})
     : fetchJSON('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=il&q='+encodeURIComponent(q+', ישראל'), 15000).then(function(g){
-        if(!g||!g.length) throw new Error('לא נמצא. נסה עיר אחרת.');
+        if(!g||!g.length) throw new Error('לא נמצא');
         var a = g[0].address||{};
         return {lat:parseFloat(g[0].lat), lon:parseFloat(g[0].lon),
           city:(a.city||a.town||a.village||a.suburb||a.county||HOME_CITY)};
@@ -120,8 +200,7 @@ function searchAddr(){
       var matches = [];
       if(kw.length){
         for(i=0;i<stops.length;i++){
-          var nm = stops[i].name||'';
-          var okAll = true;
+          var nm = stops[i].name||'', okAll = true;
           for(var k=0;k<kw.length;k++){ if(nm.indexOf(kw[k])<0){ okAll=false; break; } }
           if(okAll){ matches.push(stops[i]); shown[stops[i].code]=1; }
         }
@@ -141,7 +220,7 @@ function searchAddr(){
         for(var m=0;m<matches.length;m++){ outEl.appendChild(stopBlock(matches[m], matches[m]._d)); }
         showTitle('הכי קרובות:');
       } else {
-        say('תחנות קרובות:');
+        say('תחנות קרובות - לחץ זמנים חיים:');
       }
       var n = 0;
       for(var j=0;j<stops.length && n<6;j++){
@@ -149,8 +228,6 @@ function searchAddr(){
         outEl.appendChild(stopBlock(stops[j], stops[j]._d));
         n++;
       }
-      var first = outEl.querySelector('a.big');
-      if(first) first.focus();
     });
   }).catch(function(e){
     say('שגיאה: '+(e.message||e)+' נסה מספר תחנה למטה.');
@@ -161,21 +238,14 @@ function searchCode(){
   var code = (document.getElementById('code').value||'').replace(/\D/g,'');
   if(!code){ say('כתוב מספר תחנה, למשל 3948'); return; }
   say('בודק תחנה '+code+'...');
-  getCityStops(HOME_CITY).then(function(){ return fetchJSON('https://open-bus-stride-api.hasadna.org.il/gtfs_stops/list?limit=3&code='+code, 20000); }).then(function(stops){
+  fetchJSON(API+'/gtfs_stops/list?limit=3&code='+code, 20000).then(function(stops){
     outEl.innerHTML = '';
     if(stops&&stops.length){
       var s = dedupe(stops)[0];
-      say(s.name+' ('+s.city+'):');
+      say(s.name+' - לחץ זמנים חיים:');
       outEl.appendChild(stopBlock(s, 0));
-    } else { say('תחנה '+code+' - זמנים:'); }
-    addLiveLink(code);
-  }).catch(function(){ say('תחנה '+code+' - זמנים:'); addLiveLink(code); });
-}
-function addLiveLink(code){
-  var a = document.createElement('a');
-  a.className='big'; a.href='https://curlbus.app/'+code;
-  a.textContent='זמנים חיים ← '+code;
-  outEl.appendChild(a); a.focus();
+    } else { say('תחנה '+code+':'); }
+  }).catch(function(){ say('שגיאת רשת.'); });
 }
 function placeGo(place){
   var cur = (addrEl.value||'').trim();
