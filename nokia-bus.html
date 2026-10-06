@@ -125,25 +125,29 @@ function liveForStop(stop, box, btn){
   btn.disabled = true;
   box.innerHTML = '<div class="meta">טוען לוז וזמנים חיים...</div>';
   var now = new Date();
-  var D = stop.date || todayKey();
-  var base = Date.parse(D+'T00:00:00Z');
-  if(isNaN(base)){ base = Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate(),0,0,0); D = todayKey(); }
-  var q1 = API+'/gtfs_ride_stops/list?limit=200&gtfs_stop__code='+stop.code
-    + '&arrival_time_from='+encodeURIComponent(new Date(base-3*3600000).toISOString())
-    + '&arrival_time_to='+encodeURIComponent(new Date(base+21*3600000).toISOString())
-    + '&order_by=arrival_time%20asc';
+  var q1 = API+'/gtfs_ride_stops/list?limit=300&gtfs_stop__code='+stop.code
+    + '&arrival_time_from='+encodeURIComponent(new Date(now.getTime()-72*3600000).toISOString())
+    + '&arrival_time_to='+encodeURIComponent(new Date(now.getTime()+6*3600000).toISOString())
+    + '&order_by=arrival_time%20desc';
   var rowsByNum = {};
   var serving = {};
   fetchJSON(q1,20000).then(function(rides){
     rides = rides||[];
-    if(!rides.length){ box.innerHTML = '<div class="meta">אין לוז לתחנה זו.</div>'; btn.disabled=false; btn.textContent='רענן זמנים'; return; }
-    rides.forEach(function(r){
+    if(!rides.length){ box.innerHTML = '<div class="meta">אין נסיעות ב-6 שעות הקרובות בתחנה זו.</div>'; btn.disabled=false; btn.textContent='רענן זמנים'; return; }
+    var D = '';
+    rides.forEach(function(r){ var k=dayKey(r.arrival_time); if(k>D) D=k; });
+    var dayRides = rides.filter(function(r){ return dayKey(r.arrival_time)===D; });
+    dayRides.forEach(function(r){
       var sn = r.gtfs_route__route_short_name || '?';
       if(!serving[sn]){ serving[sn]={num:sn, dest:(r.gtfs_route__route_long_name||'').split('<->')[0], op:r.gtfs_route__agency_name||''}; }
     });
     var tk = todayKey();
-    var cutoff = (D===tk) ? now.getTime() : Date.parse(D+'T'+('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2)+':00+03:00');
-    var up = rides.filter(function(r){ return Date.parse(r.arrival_time) >= cutoff-60000; }).slice(0,8);
+    var u = now;
+    var todUTC = ('0'+u.getUTCHours()).slice(-2)+':'+('0'+u.getUTCMinutes()).slice(-2)+':00Z';
+    var cutoff = (D===tk) ? now.getTime() : Date.parse(D+'T'+todUTC);
+    var up = dayRides.filter(function(r){ return Date.parse(r.arrival_time) >= cutoff-15*60000; });
+    up.sort(function(a,b){ return Date.parse(a.arrival_time)-Date.parse(b.arrival_time); });
+    up = up.slice(0,10);
     box.innerHTML = '';
     var note = document.createElement('div');
     note.className = 'meta';
