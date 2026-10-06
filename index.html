@@ -81,17 +81,39 @@ function getCityStops(city){
     return s;
   });
 }
-function lineInfo(line_ref){
-  if(lineCache[line_ref]) return Promise.resolve(lineCache[line_ref]);
-  return fetchJSON(API+'/siri_rides/list?limit=1&siri_route__line_refs='+line_ref, 20000).then(function(r){
-    var info = {num:String(line_ref), dest:'', op:''};
-    if(r && r.length){
-      if(r[0].gtfs_route__route_short_name) info.num = r[0].gtfs_route__route_short_name;
-      info.dest = r[0].gtfs_route__route_long_name||'';
-      info.op = r[0].gtfs_route__agency_name||'';
-    }
-    lineCache[line_ref]=info; return info;
-  }).catch(function(){ var f={num:String(line_ref),dest:'',op:''}; lineCache[line_ref]=f; return f; });
+function batchLineInfo(line_refs){
+  var fresh = line_refs.filter(function(lr){ return !lineCache[lr]; });
+  if(!fresh.length){
+    var m = {};
+    line_refs.forEach(function(lr){ m[lr]=lineCache[lr]; });
+    return Promise.resolve(m);
+  }
+  return fetchJSON(API+'/siri_rides/list?limit='+Math.max(fresh.length,1)+'&siri_route__line_refs='+fresh.join(','), 20000).then(function(r){
+    (r||[]).forEach(function(x){
+      var lr = x.siri_route__line_ref;
+      if(!lineCache[lr]) lineCache[lr] = {num:String(lr), dest:'', op:''};
+      if(x.gtfs_route__route_short_name) lineCache[lr].num = x.gtfs_route__route_short_name;
+      if(x.gtfs_route__route_long_name) lineCache[lr].dest = x.gtfs_route__route_long_name;
+      if(x.gtfs_route__agency_name) lineCache[lr].op = x.gtfs_route__agency_name;
+    });
+    fresh.forEach(function(lr){ if(!lineCache[lr]) lineCache[lr]={num:String(lr),dest:'',op:''}; });
+    var m2 = {};
+    line_refs.forEach(function(lr){ m2[lr]=lineCache[lr]; });
+    return m2;
+  }).catch(function(){
+    var m3 = {};
+    line_refs.forEach(function(lr){ if(!lineCache[lr]) lineCache[lr]={num:String(lr),dest:'',op:''}; m3[lr]=lineCache[lr]; });
+    return m3;
+  });
+}
+function fmtTime(iso){
+  try { return new Date(iso).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jerusalem'}); }
+  catch(e){ return (iso||'').slice(11,16); }
+}
+function dayKey(iso){ return (iso||'').slice(0,10); }
+function todayKey(){
+  try { return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Jerusalem'}); }
+  catch(e){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 }
 function keywords(q, city){
   var skip = ['רחוב','רח','מספר','ליד','על','יד','של','את','עם','אל'];
@@ -101,52 +123,69 @@ function keywords(q, city){
 }
 function liveForStop(stop, box, btn){
   btn.disabled = true;
-  box.innerHTML = '<div class="meta">טוען זמנים חיים...</div>';
+  box.innerHTML = '<div class="meta">טוען לוז וזמנים חיים...</div>';
+  var now = new Date();
+  var d0 = new Date(now.getTime()-2*86400000);
+  var p = function(d){ return d.toISOString(); };
+  var q1 = API+'/gtfs_ride_stops/list?limit=400&gtfs_stop__code='+stop.code
+    + '&arrival_time_from='+encodeURIComponent(p(new Date(Date.UTC(d0.getUTCFullYear(),d0.getUTCMonth(),d0.getUTCDate(),0,0,0))))
+    + '&arrival_time_to='+encodeURIComponent(p(new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate(),23,59,0))))
+    + '&order_by=arrival_time%20asc';
   var d = 0.02;
-  var url = API+'/siri_vehicle_locations/list?limit=80'
+  var q2 = API+'/siri_vehicle_locations/list?limit=80'
     + '&lat__greater_or_equal='+(stop.lat-d)+'&lat__lower_or_equal='+(stop.lat+d)
     + '&lon__greater_or_equal='+(stop.lon-d)+'&lon__lower_or_equal='+(stop.lon+d)
     + '&order_by=recorded_at_time%20desc';
-  fetchJSON(url, 25000).then(function(vs){
-    vs = vs||[];
-    var fresh = vs.filter(function(v){ var a=agoMin(v.recorded_at_time); return a>=0 && a<=25; });
-    if(!fresh.length){ box.innerHTML = '<div class="meta">אין אוטובוסים חיים כרגע ליד תחנה זו.</div>'; btn.disabled=false; say('אין תנועה חיה כרגע.'); return; }
-    var byLine = {};
-    fresh.forEach(function(v){
-      var lr = v.siri_route__line_ref;
-      if(!byLine[lr]) byLine[lr]=[];
-      byLine[lr].push(v);
+  Promise.all([fetchJSON(q1,25000).catch(function(){return [];}), fetchJSON(q2,25000).catch(function(){return [];})]).then(function(all){
+    var rides = all[0]||[], vs = all[1]||[];
+    if(!rides.length){ box.innerHTML = '<div class="meta">אין לוז לתחנה זו.</div>'; btn.disabled=false; btn.textContent='רענן זמנים'; return; }
+    var D = '';
+    rides.forEach(function(r){ var k=dayKey(r.arrival_time); if(k>D) D=k; });
+    var dayRides = rides.filter(function(r){ return dayKey(r.arrival_time)===D; });
+    var serving = {}, order = [];
+    dayRides.forEach(function(r){
+      var sn = r.gtfs_route__route_short_name || '?';
+      if(!serving[sn]){ serving[sn]={num:sn, dest:(r.gtfs_route__route_long_name||'').split('<->')[0], op:r.gtfs_route__agency_name||''}; order.push(sn); }
     });
-    var rows = Object.keys(byLine).map(function(lr){
-      var best = null, bestD = 1e9;
-      byLine[lr].forEach(function(v){
-        if(v.lat==null||v.lon==null) return;
+    var tk = todayKey();
+    var cutoff = (D===tk) ? now.getTime() : Date.parse(D+'T'+('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2)+':00+03:00');
+    var up = dayRides.filter(function(r){ return Date.parse(r.arrival_time) >= cutoff-60000; }).slice(0,8);
+    var fresh = vs.filter(function(v){ var a=agoMin(v.recorded_at_time); return a>=0 && a<=20 && v.lat!=null; });
+    var lrs = [];
+    fresh.forEach(function(v){ if(lrs.indexOf(v.siri_route__line_ref)<0) lrs.push(v.siri_route__line_ref); });
+    batchLineInfo(lrs).then(function(lmap){
+      var liveByNum = {};
+      fresh.forEach(function(v){
+        var info = lmap[v.siri_route__line_ref]||{num:String(v.siri_route__line_ref)};
+        if(!serving[info.num]) return;
         var dd = distKm(stop.lat,stop.lon,v.lat,v.lon);
-        if(dd<bestD){ bestD=dd; best=v; }
+        var cur = liveByNum[info.num];
+        if(!cur || dd<cur.d) liveByNum[info.num] = {d:dd, age:agoMin(v.recorded_at_time)};
       });
-      return best ? {lr:lr, v:best, d:bestD} : null;
-    }).filter(function(x){return x;});
-    rows.sort(function(a,b){return a.d-b.d;});
-    rows = rows.slice(0,6);
-    Promise.all(rows.map(function(r){ return lineInfo(r.lr); })).then(function(infos){
       box.innerHTML = '';
-      rows.forEach(function(r, i){
-        var info = infos[i];
-        var age = agoMin(r.v.recorded_at_time);
-        var mins = Math.round(r.d*1000);
-        var etaTxt = 'בתחנה / עומד';
-        var v = r.v.velocity;
-        if(v && v>3){ etaTxt = 'מגיע בעוד כ-'+Math.max(1,Math.round(mins/(v*1000/3600)/60))+' דקות (משוער)'; }
-        else if(mins>150){ etaTxt = 'בדרך - '+mins+' מטר מהתחנה'; }
-        var dest = info.dest ? info.dest.split('<->')[0] : '';
+      var note = document.createElement('div');
+      note.className = 'meta';
+      note.textContent = D===tk ? 'לוז להיום:' : 'לוז מתוכנן ('+D+', יתכן שינוי):';
+      box.appendChild(note);
+      if(!up.length){
+        var e = document.createElement('div');
+        e.className = 'meta';
+        e.textContent = 'אין עוד נסיעות מתוכננות להיום בתחנה זו.';
+        box.appendChild(e);
+      }
+      up.forEach(function(r){
+        var sn = r.gtfs_route__route_short_name || '?';
+        var info = serving[sn]||{num:sn,dest:'',op:''};
+        var lv = liveByNum[sn];
         var dv = document.createElement('div');
         dv.className = 'bus';
-        dv.innerHTML = '<div class="num">קו ' + esc(info.num) + '</div>'
-          + '<div class="eta">' + esc(etaTxt) + '</div>'
-          + '<div class="sub">' + esc(dest) + (info.op?'<br>'+esc(info.op):'') + '<br>נראה לפני '+age+' דקות</div>';
+        var h = '<div class="num">קו ' + esc(info.num) + ' - ' + esc(fmtTime(r.arrival_time)) + '</div>';
+        if(lv){ h += '<div class="eta">🟢 חי - ' + Math.round(lv.d*1000) + ' מטר מהתחנה</div><div class="sub">נראה לפני '+lv.age+' דקות</div>'; }
+        else { h += '<div class="sub">מתוכנן' + (info.op?' · '+esc(info.op):'') + (info.dest?'<br>'+esc(info.dest):'') + '</div>'; }
+        dv.innerHTML = h;
         box.appendChild(dv);
       });
-      say('עודכן עכשיו. ' + rows.length + ' קווים חיים.');
+      say('עודכן. ' + up.length + ' נסיעות.');
       btn.disabled = false;
       btn.textContent = 'רענן זמנים';
     });
