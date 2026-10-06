@@ -127,13 +127,13 @@ function liveForStop(stop, box, btn){
   var now = new Date();
   var q1 = API+'/gtfs_ride_stops/list?limit=300&gtfs_stop__code='+stop.code
     + '&arrival_time_from='+encodeURIComponent(new Date(now.getTime()-72*3600000).toISOString())
-    + '&arrival_time_to='+encodeURIComponent(new Date(now.getTime()+6*3600000).toISOString())
+    + '&arrival_time_to='+encodeURIComponent(new Date(now.getTime()+1*3600000).toISOString())
     + '&order_by=arrival_time%20desc';
   var rowsByNum = {};
   var serving = {};
   fetchJSON(q1,20000).then(function(rides){
     rides = rides||[];
-    if(!rides.length){ box.innerHTML = '<div class="meta">אין נסיעות ב-6 שעות הקרובות בתחנה זו.</div>'; btn.disabled=false; btn.textContent='רענן זמנים'; return; }
+    if(!rides.length){ box.innerHTML = '<div class="meta">אין נסיעות בשעה הקרובה בתחנה זו.</div>'; btn.disabled=false; btn.textContent='רענן זמנים'; return; }
     var D = '';
     rides.forEach(function(r){ var k=dayKey(r.arrival_time); if(k>D) D=k; });
     var dayRides = rides.filter(function(r){ return dayKey(r.arrival_time)===D; });
