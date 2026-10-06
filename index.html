@@ -44,7 +44,14 @@ var API = 'https://open-bus-stride-api.hasadna.org.il';
 var statusEl = document.getElementById('status');
 var outEl = document.getElementById('out');
 var addrEl = document.getElementById('addr');
-var stopCache = {}, lineCache = {};
+var stopCache = {}, lineCache = {}, cityLinesCache = {};
+function cityLines(city){
+  if(cityLinesCache[city]) return Promise.resolve(cityLinesCache[city]);
+  return fetchJSON('data/'+encodeURIComponent(city)+'.json',15000).then(function(m){
+    cityLinesCache[city] = m||null;
+    return cityLinesCache[city];
+  }).catch(function(){ cityLinesCache[city] = null; return null; });
+}
 function say(t){ statusEl.textContent = t; }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
 function distKm(lat1,lon1,lat2,lon2){
@@ -88,7 +95,7 @@ function batchLineInfo(line_refs){
     line_refs.forEach(function(lr){ m[lr]=lineCache[lr]; });
     return Promise.resolve(m);
   }
-  return fetchJSON(API+'/siri_rides/list?limit='+Math.max(fresh.length,1)+'&siri_route__line_refs='+fresh.join(','), 20000).then(function(r){
+  return fetchJSON(API+'/siri_rides/list?limit=100&siri_route__line_refs='+fresh.join(','), 20000).then(function(r){
     (r||[]).forEach(function(x){
       var lr = x.siri_route__line_ref;
       if(!lineCache[lr]) lineCache[lr] = {num:String(lr), dest:'', op:''};
@@ -235,6 +242,18 @@ function stopBlock(s, km){
   btn.onclick = function(){ liveForStop(s, box, btn); };
   d.appendChild(btn);
   d.appendChild(box);
+  var alll = document.createElement('div');
+  alll.className = 'meta';
+  d.appendChild(alll);
+  cityLines(s.city).then(function(m){
+    if(!m || !m[s.code] || !m[s.code].lines) return;
+    var L = m[s.code].lines;
+    var h = '<b>כל הקווים כאן ('+L.length+'): '+L.map(function(x){ return esc(x.num); }).join(', ')+'</b>';
+    L.forEach(function(x){
+      h += '<br>קו '+esc(x.num)+(x.op?' · '+esc(x.op):'')+(x.dest?'<br>'+esc(x.dest):'');
+    });
+    alll.innerHTML = h;
+  });
   return d;
 }
 function showTitle(t){
