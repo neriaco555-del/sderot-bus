@@ -125,13 +125,25 @@ function liveForStop(stop, box, btn){
   btn.disabled = true;
   box.innerHTML = '<div class="meta">טוען לוז וזמנים חיים...</div>';
   var now = new Date();
-  var q1 = API+'/gtfs_ride_stops/list?limit=300&gtfs_stop__code='+stop.code
-    + '&arrival_time_from='+encodeURIComponent(new Date(now.getTime()-72*3600000).toISOString())
-    + '&arrival_time_to='+encodeURIComponent(new Date(now.getTime()+1*3600000).toISOString())
-    + '&order_by=arrival_time%20desc';
   var rowsByNum = {};
   var serving = {};
-  fetchJSON(q1,20000).then(function(rides){
+  function qDay(backH){
+    return API+'/gtfs_ride_stops/list?limit=300&gtfs_stop__code='+stop.code
+      + '&arrival_time_from='+encodeURIComponent(new Date(now.getTime()-backH-3600000).toISOString())
+      + '&arrival_time_to='+encodeURIComponent(new Date(now.getTime()-backH+3600000).toISOString())
+      + '&order_by=arrival_time%20asc';
+  }
+  function tryWin(backH, done){
+    fetchJSON(qDay(backH),18000).then(function(r){
+      if(r && r.length) done(r, backH);
+      else if(backH < 48*3600000) tryWin(backH+24*3600000, done);
+      else done([], backH);
+    }).catch(function(){
+      if(backH < 48*3600000) tryWin(backH+24*3600000, done);
+      else done([], backH);
+    });
+  }
+  tryWin(0, function(rides, backH){
     rides = rides||[];
     if(!rides.length){ box.innerHTML = '<div class="meta">אין נסיעות בשעה הקרובה בתחנה זו.</div>'; btn.disabled=false; btn.textContent='רענן זמנים'; return; }
     var D = '';
@@ -142,10 +154,8 @@ function liveForStop(stop, box, btn){
       if(!serving[sn]){ serving[sn]={num:sn, dest:(r.gtfs_route__route_long_name||'').split('<->')[0], op:r.gtfs_route__agency_name||''}; }
     });
     var tk = todayKey();
-    var u = now;
-    var todUTC = ('0'+u.getUTCHours()).slice(-2)+':'+('0'+u.getUTCMinutes()).slice(-2)+':00Z';
-    var cutoff = (D===tk) ? now.getTime() : Date.parse(D+'T'+todUTC);
-    var up = dayRides.filter(function(r){ return Date.parse(r.arrival_time) >= cutoff-15*60000; });
+    var winStart = now.getTime()-backH-3600000;
+    var up = dayRides.filter(function(r){ return Date.parse(r.arrival_time) >= winStart-15*60000; });
     up.sort(function(a,b){ return Date.parse(a.arrival_time)-Date.parse(b.arrival_time); });
     up = up.slice(0,10);
     box.innerHTML = '';
