@@ -114,6 +114,48 @@ function doSearch(){
     say('כל השרתים נפלו כרגע. נסה שוב, הדבק קישור ישיר, או שמור מפתח API למטה.');
   }).catch(function(e){say('שגיאה: '+(e.message||e));});
 }
+function ytFrame(id,auto){
+  var f=document.createElement('iframe');
+  f.src='https://www.youtube.com/embed/'+id+'?autoplay='+(auto?1:0)+'&rel=0&playsinline=1&vq=tiny&enablejsapi=1';
+  f.setAttribute('allow','autoplay;encrypted-media;picture-in-picture');
+  f.allowFullscreen=true;
+  return f;
+}
+var ytApiLoaded=false,ytApiCbs=[];
+function ytApi(cb){
+  if(window.YT&&window.YT.Player){cb(true);return;}
+  ytApiCbs.push(cb);
+  if(ytApiLoaded)return;
+  ytApiLoaded=true;
+  var s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';
+  s.onerror=function(){var c=ytApiCbs;ytApiCbs=[];c.forEach(function(f){f(false);});};
+  document.head.appendChild(s);
+  window.onYouTubeIframeAPIReady=function(){var c=ytApiCbs;ytApiCbs=[];c.forEach(function(f){f(true);});};
+  setTimeout(function(){if(ytApiCbs.length){var c2=ytApiCbs;ytApiCbs=[];c2.forEach(function(f){f(false);});}},15000);
+}
+function preloadPlay(id,box,countEl){
+  box.innerHTML='';
+  var holder=document.createElement('div');box.appendChild(holder);
+  countEl.textContent='טוען נגן...';
+  ytApi(function(ok){
+    if(!ok){holder.appendChild(ytFrame(id,true));countEl.textContent='';return;}
+    try{
+      var pl=new YT.Player(holder,{width:'232',height:'130',videoId:id,
+        playerVars:{rel:0,playsinline:1,vq:'tiny'},
+        events:{
+          onReady:function(){
+            try{pl.cueVideoById(id);}catch(e){}
+            var n=60;countEl.textContent='טוען... '+n+' שניות';
+            var iv=setInterval(function(){n--;
+              if(n<=0){clearInterval(iv);try{pl.playVideo();}catch(e){}countEl.textContent='מנגן';}
+              else countEl.textContent='טוען... '+n+' שניות';},1000);
+          },
+          onStateChange:function(ev){try{if(ev.data===1)pl.setPlaybackQuality('tiny');}catch(e){}},
+          onError:function(){box.innerHTML='';box.appendChild(ytFrame(id,true));countEl.textContent='';}
+        }});
+    }catch(e){holder.appendChild(ytFrame(id,true));countEl.textContent='';}
+  });
+}
 function openWatch(id,title){
   if(!id){say('מזהה לא תקין.');return;}
   homeEl.style.display='none';wEl.style.display='block';wEl.innerHTML='';
@@ -121,11 +163,14 @@ function openWatch(id,title){
   var th=document.createElement('div');th.className='th';
   var im=document.createElement('img');im.src='https://i.ytimg.com/vi/'+id+'/mqdefault.jpg';im.alt='';
   var p=document.createElement('button');p.className='play';p.textContent='▶';
-  p.onclick=function(){
-    th.innerHTML='<iframe src="https://www.youtube-nocookie.com/embed/'+id
-      +'?autoplay=1&rel=0&playsinline=1&vq=small" allow="autoplay;encrypted-media;picture-in-picture" allowfullscreen></iframe>';
-  };
-  th.appendChild(im);th.appendChild(p);wEl.appendChild(th);
+  var countEl=document.createElement('div');countEl.className='meta';
+  p.onclick=function(){countEl.textContent='';th.innerHTML='';th.appendChild(ytFrame(id,true));};
+  p.style.right='150px';p.title='נגן מיד';
+  var pre=document.createElement('button');pre.className='play';pre.textContent='⏳';
+  pre.title='טען דקה ואז נגן';
+  pre.style.right='20px';
+  pre.onclick=function(){preloadPlay(id,th,countEl);};
+  th.appendChild(im);th.appendChild(p);wEl.appendChild(th);wEl.appendChild(countEl);
   var m=document.createElement('div');m.className='meta';
   m.innerHTML='<a href="https://www.youtube.com/watch?v='+id+'">פתח ביוטיוב הרגיל</a>';wEl.appendChild(m);
   var b=document.createElement('button');b.className='g';b.textContent='◀ חזרה לחיפוש';
