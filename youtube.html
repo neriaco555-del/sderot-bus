@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>יוטיוב קל לנוקיה</title>
+<style>
+body{margin:0;padding:4px;background:#111;color:#fff;font-family:sans-serif;font-size:15px;max-width:240px}
+h1{font-size:17px;margin:2px 0 6px;color:#f33}
+input{width:150px;font-size:15px;padding:4px}
+button{font-size:15px;padding:5px 8px;margin:2px;background:#f33;color:#fff;border:0}
+button.g{background:#333}
+#st{font-size:12px;color:#ccc;min-height:16px;margin:4px 0}
+.it{display:block;width:100%;text-align:right;background:#222;color:#fff;border:0;border-bottom:1px solid #444;padding:6px 4px;font-size:14px}
+.it b{display:block}
+.it span{font-size:12px;color:#bbb}
+.th{position:relative;width:232px;height:130px;background:#000}
+.th img{width:232px;height:130px}
+.play{position:absolute;top:35px;right:86px;width:60px;height:60px;font-size:24px;background:rgba(255,0,0,.85)}
+iframe{width:232px;height:130px;border:0}
+a{color:#8cf}
+.meta{font-size:12px;color:#bbb;margin:4px 0}
+#set{font-size:12px;color:#bbb;margin-top:8px}
+#set input{width:140px;font-size:12px}
+</style>
+</head>
+<body>
+<h1>▶ יוטיוב קל</h1>
+<div id="home">
+<input id="q" placeholder="חיפוש או קישור..." value="">
+<button id="go">חפש</button>
+<div id="st"></div>
+<div id="res"></div>
+<div id="set">שרתים נופלים לפעמים - מנסה כמה אוטומטית.<br>
+מפתח YouTube אישי (אופציונלי, לגיבוי):<br>
+<input id="key" placeholder="API key..."> <button class="g" id="save">שמור</button>
+</div>
+</div>
+<div id="watch" style="display:none"></div>
+<script>
+var APIS=[
+'https://pipedapi.ducks.party',
+'https://api.piped.private.coffee',
+'https://pipedapi.reallyaweso.me',
+'https://pipedapi-libre.kavin.rocks',
+'https://pipedapi.leptons.xyz',
+'https://pipedapi.nosebs.ru',
+'https://pipedapi.syncpundit.io',
+'https://piped-api.privacy.com.de',
+'https://api.piped.yt',
+'https://pipedapi.owo.si'];
+var qEl=document.getElementById('q'),stEl=document.getElementById('st'),
+resEl=document.getElementById('res'),homeEl=document.getElementById('home'),
+wEl=document.getElementById('watch');
+function say(t){stEl.textContent=t;}
+function fj(url,ms){
+  return new Promise(function(res,rej){
+    var x=new XMLHttpRequest(),t=setTimeout(function(){x.abort();rej(new Error('timeout'));},ms||12000);
+    x.onreadystatechange=function(){if(x.readyState===4){clearTimeout(t);
+      if(x.status>=200&&x.status<300){try{res(JSON.parse(x.responseText));}catch(e){rej(e);}}else rej(new Error('http '+x.status));}};
+    x.onerror=function(){clearTimeout(t);rej(new Error('net'));};
+    x.open('GET',url,true);x.send();
+  });
+}
+function vidOf(u){var m=/(?:v=|youtu\.be\/|embed\/|shorts\/)([A-Za-z0-9_-]{11})/.exec(u||'');return m?m[1]:(/^([A-Za-z0-9_-]{11})$/.exec((u||'').trim())||[])[1];}
+function fmtDur(s){s=Math.round(+s||0);if(!s)return '';var m=Math.floor(s/60),h=Math.floor(m/60);
+  if(h)return h+':'+('0'+(m%60)).slice(-2)+':'+('0'+(s%60)).slice(-2);return m+':'+('0'+(s%60)).slice(-2);}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function searchPiped(query){
+  var i=0;
+  function next(){
+    if(i>=APIS.length)return Promise.reject(new Error('all failed'));
+    var base=APIS[i++];
+    say('מחפש... ('+i+'/'+APIS.length+')');
+    return fj(base+'/search?q='+encodeURIComponent(query)+'&filter=videos',10000).then(function(d){
+      var items=(d.items||d.results||[]).filter(function(v){
+        var u=v.url||'';return (v.type==='stream'||u.indexOf('/watch')===0)&&vidOf('x'+u);});
+      if(!items.length)throw new Error('empty');
+      return items.slice(0,15);
+    }).catch(function(){return next();});
+  }
+  return next();
+}
+function searchYTKey(query,key){
+  return fj('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=15&q='
+    +encodeURIComponent(query)+'&key='+encodeURIComponent(key),12000).then(function(d){
+    if(d.error)throw new Error(d.error.message||'key error');
+    return (d.items||[]).map(function(v){return {id:v.id.videoId,title:v.snippet.title,chan:v.snippet.channelTitle};});
+  });
+}
+function showList(items){
+  resEl.innerHTML='';
+  say('נמצאו '+items.length+' תוצאות - בחר סרטון:');
+  items.forEach(function(v){
+    var id=v.id||vidOf('x'+(v.url||''));
+    var b=document.createElement('button');
+    b.className='it';
+    b.innerHTML='<b>'+esc(v.title||v.name||'ללא כותרת')+'</b><span>'
+      +esc(v.chan||v.uploaderName||v.uploader||'')+(v.duration?(' · '+fmtDur(v.duration)):'')+'</span>';
+    b.onclick=function(){openWatch(id,v.title||v.name||'');};
+    resEl.appendChild(b);
+  });
+  var f=resEl.querySelector('button');if(f)f.focus();
+}
+function doSearch(){
+  var query=(qEl.value||'').trim();
+  if(!query){say('כתוב מילות חיפוש או הדבק קישור.');return;}
+  var id=vidOf(query);
+  if(id){openWatch(id,'');return;}
+  resEl.innerHTML='';
+  searchPiped(query).then(showList).catch(function(){
+    var key='';try{key=localStorage.getItem('ytkey')||'';}catch(e){}
+    if(key){say('שרתים נפלו - מנסה מפתח אישי...');return searchYTKey(query,key).then(showList);}
+    say('כל השרתים נפלו כרגע. נסה שוב, הדבק קישור ישיר, או שמור מפתח API למטה.');
+  }).catch(function(e){say('שגיאה: '+(e.message||e));});
+}
+function openWatch(id,title){
+  if(!id){say('מזהה לא תקין.');return;}
+  homeEl.style.display='none';wEl.style.display='block';wEl.innerHTML='';
+  var t=document.createElement('div');t.innerHTML='<b>'+esc(title||'סרטון')+'</b>';wEl.appendChild(t);
+  var th=document.createElement('div');th.className='th';
+  var im=document.createElement('img');im.src='https://i.ytimg.com/vi/'+id+'/mqdefault.jpg';im.alt='';
+  var p=document.createElement('button');p.className='play';p.textContent='▶';
+  p.onclick=function(){
+    th.innerHTML='<iframe src="https://www.youtube-nocookie.com/embed/'+id
+      +'?autoplay=1&rel=0&playsinline=1&vq=small" allow="autoplay;encrypted-media;picture-in-picture" allowfullscreen></iframe>';
+  };
+  th.appendChild(im);th.appendChild(p);wEl.appendChild(th);
+  var m=document.createElement('div');m.className='meta';
+  m.innerHTML='<a href="https://www.youtube.com/watch?v='+id+'">פתח ביוטיוב הרגיל</a>';wEl.appendChild(m);
+  var b=document.createElement('button');b.className='g';b.textContent='◀ חזרה לחיפוש';
+  b.onclick=function(){wEl.style.display='none';wEl.innerHTML='';homeEl.style.display='block';qEl.focus();};
+  wEl.appendChild(b);p.focus();
+  window.scrollTo(0,0);
+}
+document.getElementById('go').onclick=doSearch;
+qEl.onkeydown=function(e){if(e.keyCode===13)doSearch();};
+document.getElementById('save').onclick=function(){
+  var k=(document.getElementById('key').value||'').trim();
+  try{localStorage.setItem('ytkey',k);}catch(e){}
+  say(k?'מפתח נשמר.':'מפתח נמחק.');
+};
+try{var k0=localStorage.getItem('ytkey')||'';if(k0)document.getElementById('key').value=k0;}catch(e){}
+</script>
+</body>
+</html>
