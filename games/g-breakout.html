@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ברייקאוט</title>
+<style>
+body{margin:0;padding:4px;background:#111;color:#fff;font-family:sans-serif;font-size:14px;max-width:240px;text-align:center}
+a{color:#8cf}.top{text-align:right}
+canvas{background:#000;border:1px solid #444}
+#st{min-height:18px;font-size:13px;color:#ccc}
+</style>
+</head>
+<body>
+<div class="top"><a href="../games.html">◀ כל המשחקים</a></div>
+<h2>🧱 ברייקאוט</h2>
+<canvas id="c" width="232" height="220"></canvas>
+<div id="st"></div>
+<div>ניקוד: <b id="sc">0</b> · חיים: <b id="lv">3</b></div>
+<script>
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),stEl=document.getElementById('st');
+var W=232,H=220;
+var pad,ball,bricks,score,lives,level,run,over,timer,keys,stuck;
+function build(){bricks=[];var rows=4+Math.min(level,3);
+  for(var r=0;r<rows;r++)for(var c=0;c<6;c++)bricks.push({x:6+c*37.5,y:24+r*16,w:35,h:13,on:true,c:['#f33','#f93','#ff3','#3d3','#3af','#a3f'][r%6]});}
+function reset(){score=0;lives=3;level=1;pad={x:W/2-25,w:50};serve(true);build();over=false;run=false;upd();draw();say('אמצעי להתחלה · חצים למחבט');}
+function serve(first){ball={x:pad.x+pad.w/2,y:H-24,vx:0,vy:0};stuck=true;if(!first)draw();}
+function upd(){document.getElementById('sc').textContent=score;document.getElementById('lv').textContent=lives;}
+function say(t){stEl.textContent=t;}
+function launch(){if(!stuck)return;stuck=false;ball.vx=(Math.random()<0.5?-1:1)*(1.5+level*0.2);ball.vy=-(2+level*0.25);say('');}
+function step(){
+  if(keys.l)pad.x=Math.max(0,pad.x-4);
+  if(keys.r)pad.x=Math.min(W-pad.w,pad.x+4);
+  if(stuck){ball.x=pad.x+pad.w/2;draw();return;}
+  ball.x+=ball.vx;ball.y+=ball.vy;
+  if(ball.x<3||ball.x>W-3)ball.vx*=-1;
+  if(ball.y<3)ball.vy*=-1;
+  if(ball.vy>0&&ball.y>=H-26&&ball.y<=H-18&&ball.x>=pad.x-3&&ball.x<=pad.x+pad.w+3){
+    var rel=(ball.x-pad.x)/pad.w-0.5;ball.vx=rel*4;ball.vy=-Math.abs(ball.vy);ball.y=H-26;}
+  for(var i=0;i<bricks.length;i++){var b=bricks[i];if(!b.on)continue;
+    if(ball.x>b.x-3&&ball.x<b.x+b.w+3&&ball.y>b.y-3&&ball.y<b.y+b.h+3){
+      b.on=false;score+=10;upd();ball.vy*=-1;break;}}
+  if(ball.y>H){lives--;upd();
+    if(lives<=0){over=true;run=false;clearInterval(timer);say('נגמר! '+score+' - אמצעי לחדש');draw();return;}
+    serve();}
+  if(bricks.every(function(b){return !b.on;})){level++;build();serve();say('שלב '+level);}
+  draw();
+}
+function draw(){
+  ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+  bricks.forEach(function(b){if(b.on){ctx.fillStyle=b.c;ctx.fillRect(b.x,b.y,b.w,b.h);}});
+  ctx.fillStyle='#fff';ctx.fillRect(pad.x,H-20,pad.w,8);
+  ctx.beginPath();ctx.arc(ball.x,ball.y,4,0,7);ctx.fillStyle='#ff3';ctx.fill();
+}
+function start(){if(run)return;reset();run=true;launch();timer=setInterval(step,30);}
+document.addEventListener('keydown',function(e){
+  var k=e.key;
+  if(k==='ArrowLeft'){keys.l=true;e.preventDefault();}
+  else if(k==='ArrowRight'){keys.r=true;e.preventDefault();}
+  else if(k==='Enter'){if(over)start();else if(run)launch();else start();e.preventDefault();}
+});
+document.addEventListener('keyup',function(e){
+  if(e.key==='ArrowLeft')keys.l=false;
+  if(e.key==='ArrowRight')keys.r=false;
+});
+keys={};reset();
+</script>
+</body>
+</html>

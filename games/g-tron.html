@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>טרון</title>
+<style>
+body{margin:0;padding:4px;background:#111;color:#fff;font-family:sans-serif;font-size:14px;max-width:240px;text-align:center}
+a{color:#8cf}.top{text-align:right}
+canvas{background:#000;border:1px solid #444}
+#st{min-height:18px;font-size:13px;color:#ccc}
+</style>
+</head>
+<body>
+<div class="top"><a href="../games.html">◀ כל המשחקים</a></div>
+<h2>🏍 טרון</h2>
+<canvas id="c" width="232" height="220"></canvas>
+<div id="st"></div>
+<div>אתה <b id="sc">0</b> · מחשב <b id="pc">0</b></div>
+<script>
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),stEl=document.getElementById('st');
+var N=29,S=8,OX=Math.floor((232-N*S)/2);
+var me,ai,dir,run,over,timer,ms,ps;
+function rnd(n){return Math.floor(Math.random()*n);}
+function reset(full){
+  var occ={};
+  me={x:6,y:14};ai={x:22,y:14};dir=[1,0];aiDir=[-1,0];
+  for(var k in occ)delete occ[k];
+  occ[me.x+','+me.y]=1;occ[ai.x+','+ai.y]=1;
+  me.occ=occ;over=false;run=false;
+  if(full){ms=0;ps=0;document.getElementById('sc').textContent='0';document.getElementById('pc').textContent='0';}
+  draw();say('אמצעי להתחלה · חצים לפנות');
+}
+function say(t){stEl.textContent=t;}
+function free(x,y,occ){return x>=0&&y>=0&&x<N&&y<N&&!occ[x+','+y];}
+function aiChoose(){
+  var dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+  var cur=aiDir,occ=me.occ;
+  var opts=dirs.filter(function(d){return free(ai.x+d[0],ai.y+d[1],occ);});
+  if(!opts.length)return cur;
+  var notBack=opts.filter(function(d){return !(d[0]===-cur[0]&&d[1]===-cur[1]);});
+  var pool=notBack.length?notBack:opts;
+  // prefer direction with most room (lookahead)
+  var best=pool[0],bs=-1;
+  pool.forEach(function(d){
+    var nx=ai.x+d[0],ny=ai.y+d[1],s=0;
+    for(var dx=-3;dx<=3;dx++)for(var dy=-3;dy<=3;dy++){var qx=nx+dx,qy=ny+dy;
+      if(qx>=0&&qy>=0&&qx<N&&qy<N&&!occ[qx+','+qy])s++;}
+    // prefer heading toward player side slightly
+    if(d[0]!==0&&Math.abs(ai.x+d[0]*4-14)<Math.abs(ai.x-14))s+=2;
+    if(s>bs){bs=s;best=d;}});
+  return Math.random()<0.85?best:pool[rnd(pool.length)];
+}
+function step(){
+  var occ=me.occ;
+  aiDir=aiChoose();
+  me.x+=dir[0];me.y+=dir[1];ai.x+=aiDir[0];ai.y+=aiDir[1];
+  var meDead=!free(me.x,me.y,occ),aiDead=!free(ai.x,ai.y,occ);
+  if(me.x===ai.x&&me.y===ai.y){meDead=aiDead=true;}
+  if(!meDead)occ[me.x+','+me.y]=1;
+  if(!aiDead)occ[ai.x+','+ai.y]=1;
+  if(meDead||aiDead){
+    over=true;run=false;clearInterval(timer);
+    if(aiDead&&!meDead){ms++;document.getElementById('sc').textContent=ms;say('ניצחת סיבוב! אמצעי לעוד');}
+    else if(meDead&&!aiDead){ps++;document.getElementById('pc').textContent=ps;say('התרסקת. אמצעי לעוד');}
+    else say('תיקו! אמצעי לעוד');
+  }
+  draw();
+}
+var OY=Math.floor((220-N*S)/2);
+function draw(){
+  ctx.fillStyle='#000';ctx.fillRect(0,0,232,220);
+  var occ=me.occ||{},k,p;
+  for(k in occ){p=k.split(',');ctx.fillStyle='#0aa';ctx.fillRect(OX+(+p[0])*S+1,OY+(+p[1])*S+1,S-2,S-2);}
+  ctx.fillStyle='#ff3';ctx.fillRect(OX+me.x*S,OY+me.y*S,S,S);
+  ctx.fillStyle='#f43';ctx.fillRect(OX+ai.x*S,OY+ai.y*S,S,S);
+}
+function start(){if(run)return;reset(false);run=true;say('');timer=setInterval(step,90);}
+document.addEventListener('keydown',function(e){
+  var k=e.key;
+  if(k==='ArrowUp'&&dir[1]!==1){dir=[0,-1];e.preventDefault();}
+  else if(k==='ArrowDown'&&dir[1]!==-1){dir=[0,1];e.preventDefault();}
+  else if(k==='ArrowLeft'&&dir[0]!==1){dir=[-1,0];e.preventDefault();}
+  else if(k==='ArrowRight'&&dir[0]!==-1){dir=[1,0];e.preventDefault();}
+  else if(k==='Enter'){if(over||!run)start();e.preventDefault();}
+});
+reset(true);
+</script>
+</body>
+</html>

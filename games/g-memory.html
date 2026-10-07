@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>זיכרון</title>
+<style>
+body{margin:0;padding:4px;background:#111;color:#fff;font-family:sans-serif;font-size:14px;max-width:240px;text-align:center}
+a{color:#8cf}.top{text-align:right}
+.card{width:52px;height:52px;font-size:24px;margin:2px;background:#222;color:#fff;border:2px solid #555}
+.card.sel{border-color:#fc0}
+.card.open{background:#063}
+#st{min-height:18px;font-size:13px;color:#ccc}
+</style>
+</head>
+<body>
+<div class="top"><a href="../games.html">◀ כל המשחקים</a></div>
+<h2>🃏 זיכרון</h2>
+<div id="b"></div>
+<div id="st"></div>
+<div>מהלכים: <b id="mv">0</b> · זוגות: <b id="pr">0/8</b></div>
+<script>
+var bEl=document.getElementById('b'),stEl=document.getElementById('st');
+var SYM=['★','●','▲','■','◆','♥','✚','◉'];
+var vals,cards,open,found,moves,sel,lock;
+for(var i=0;i<16;i++){var c=document.createElement('button');c.className='card';bEl.appendChild(c);
+  if(i%4===3)bEl.appendChild(document.createElement('br'));}
+cards=Array.prototype.slice.call(bEl.querySelectorAll('.card'));
+function say(t){stEl.textContent=t;}
+function reset(){
+  vals=SYM.concat(SYM);
+  for(var i=vals.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=vals[i];vals[i]=vals[j];vals[j]=t;}
+  open=[];found=0;moves=0;sel=0;lock=false;
+  document.getElementById('mv').textContent='0';document.getElementById('pr').textContent='0/8';
+  draw();say('חצים לזוז · אמצעי להפוך קלף');
+}
+function draw(){cards.forEach(function(c,i){
+  var isOpen=open.indexOf(i)>=0||vals[i]===null;
+  c.textContent=isOpen?vals[i]:'?';
+  c.className='card'+(isOpen?' open':'')+(i===sel?' sel':'');});}
+function flip(i){
+  if(lock||open.indexOf(i)>=0||vals[i]===null)return;
+  open.push(i);draw();
+  if(open.length===2){moves++;document.getElementById('mv').textContent=moves;
+    if(vals[open[0]]===vals[open[1]]){var a=open[0],b=open[1];open=[];
+      setTimeout(function(){vals[a]=null;vals[b]=null;found++;document.getElementById('pr').textContent=found+'/8';draw();
+        if(found===8)say('כל הכבוד! '+moves+' מהלכים - אמצעי לחדש');},400);}
+    else{lock=true;var o=open.slice();open=[];
+      setTimeout(function(){lock=false;draw();},700);}}
+}
+cards.forEach(function(c,i){c.addEventListener('click',function(){sel=i;flip(i);});});
+document.addEventListener('keydown',function(e){
+  var k=e.key,r=Math.floor(sel/4),c=sel%4;
+  if(k==='ArrowUp'){sel=((r+3)%4)*4+c;draw();e.preventDefault();}
+  else if(k==='ArrowDown'){sel=((r+1)%4)*4+c;draw();e.preventDefault();}
+  else if(k==='ArrowLeft'){sel=r*4+((c+1)%4);draw();e.preventDefault();}
+  else if(k==='ArrowRight'){sel=r*4+((c+3)%4);draw();e.preventDefault();}
+  else if(k==='Enter'){if(found===8)reset();else flip(sel);e.preventDefault();}
+});
+reset();
+</script>
+</body>
+</html>

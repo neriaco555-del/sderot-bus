@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>סיימון</title>
+<style>
+body{margin:0;padding:4px;background:#111;color:#fff;font-family:sans-serif;font-size:14px;max-width:240px;text-align:center}
+a{color:#8cf}.top{text-align:right}
+.pad{display:inline-block;width:104px;height:80px;margin:3px;border:3px solid #333;font-size:22px;color:#fff}
+#st{min-height:18px;font-size:13px;color:#ccc}
+</style>
+</head>
+<body>
+<div class="top"><a href="../games.html">◀ כל המשחקים</a></div>
+<h2>🟣 סיימון</h2>
+<div>
+<button class="pad" id="p0" style="background:#a00">1</button><button class="pad" id="p1" style="background:#0a0">2</button><br>
+<button class="pad" id="p2" style="background:#00a">3</button><button class="pad" id="p3" style="background:#aa0">4</button>
+</div>
+<div id="st"></div>
+<div>שלב: <b id="sc">0</b> · שיא: <b id="bs">0</b></div>
+<button id="go">התחל (אמצעי)</button>
+<script>
+var pads=[document.getElementById('p0'),document.getElementById('p1'),document.getElementById('p2'),document.getElementById('p3')];
+var stEl=document.getElementById('st'),scEl=document.getElementById('sc'),bsEl=document.getElementById('bs');
+var seq,pos,accept,best=0;
+try{best=parseInt(localStorage.getItem('simonBest')||'0',10)||0;}catch(e){}
+bsEl.textContent=best;
+function say(t){stEl.textContent=t;}
+function flash(i,ms){var b=pads[i],o=b.style.outline;b.style.outline='4px solid #fff';b.style.opacity='1';
+  setTimeout(function(){b.style.outline=o;b.style.opacity='0.55';},ms||350);}
+pads.forEach(function(b){b.style.opacity='0.55';});
+function playSeq(k){
+  accept=false;say('צפה...');
+  if(k>=seq.length){pos=0;accept=true;say('תורך!');return;}
+  setTimeout(function(){flash(seq[k]);setTimeout(function(){playSeq(k+1);},450);},300);
+}
+function start(){seq=[Math.floor(Math.random()*4)];scEl.textContent='1';pos=0;playSeq(0);}
+function press(i){
+  if(!accept)return;
+  flash(i,200);
+  if(i===seq[pos]){pos++;
+    if(pos>=seq.length){accept=false;seq.push(Math.floor(Math.random()*4));scEl.textContent=seq.length;
+      setTimeout(function(){playSeq(0);},700);}}
+  else{accept=false;var s=seq.length-1;
+    if(s>best){best=s;try{localStorage.setItem('simonBest',String(best));}catch(e){}bsEl.textContent=best;}
+    say('טעות! הגעת לשלב '+seq.length+' - אמצעי לחדש');seq=[];}
+}
+pads.forEach(function(b,i){b.addEventListener('click',function(){press(i);});});
+document.getElementById('go').addEventListener('click',start);
+document.addEventListener('keydown',function(e){
+  var k=e.key;
+  if(k>='1'&&k<='4'){press(parseInt(k,10)-1);e.preventDefault();}
+  else if(k==='Enter'){var a=document.activeElement;
+    if(a&&a.className==='pad'){press(pads.indexOf(a));}
+    else start();
+    e.preventDefault();}
+});
+say('אמצעי להתחלה · ספרות 1-4 משחקות');
+</script>
+</body>
+</html>

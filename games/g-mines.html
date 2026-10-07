@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>שולה מוקשים</title>
+<style>
+body{margin:0;padding:4px;background:#111;color:#fff;font-family:sans-serif;font-size:14px;max-width:240px;text-align:center}
+a{color:#8cf}.top{text-align:right}
+.cell{width:22px;height:22px;font-size:13px;margin:0;background:#222;color:#fff;border:1px solid #555;padding:0}
+.cell.sel{border:2px solid #fc0}
+.cell.open{background:#000;border-color:#333}
+#st{min-height:18px;font-size:13px;color:#ccc}
+</style>
+</head>
+<body>
+<div class="top"><a href="../games.html">◀ כל המשחקים</a></div>
+<h2>💣 שולה מוקשים</h2>
+<div id="b"></div>
+<div id="st"></div>
+<div>מוקשים: 10 · אמצעי חושף · * מסמן</div>
+<script>
+var bEl=document.getElementById('b'),stEl=document.getElementById('st');
+var SZ=9,MINES=10;
+var mine,open,flag,cur,over,started;
+var cells=[];
+for(var i=0;i<SZ*SZ;i++){var c=document.createElement('button');c.className='cell';bEl.appendChild(c);cells.push(c);
+  if(i%SZ===SZ-1)bEl.appendChild(document.createElement('br'));}
+function say(t){stEl.textContent=t;}
+function neighbors(i){var r=Math.floor(i/SZ),c=i%SZ,n=[];
+  for(var dr=-1;dr<=1;dr++)for(var dc=-1;dc<=1;dc++){if(!dr&&!dc)continue;
+    var nr=r+dr,nc=c+dc;if(nr>=0&&nr<SZ&&nc>=0&&nc<SZ)n.push(nr*SZ+nc);}return n;}
+function reset(){mine=new Array(SZ*SZ).fill(false);open=new Array(SZ*SZ).fill(false);
+  flag=new Array(SZ*SZ).fill(false);cur=40;over=false;started=false;draw();say('זוז עם חצים · אמצעי חושף');}
+function layMines(safe){
+  var placed=0;
+  while(placed<MINES){var i=Math.floor(Math.random()*SZ*SZ);
+    if(mine[i]||i===safe)continue;
+    var bad=false;neighbors(safe).forEach(function(n){if(n===i)bad=true;});
+    if(bad)continue;mine[i]=true;placed++;}
+}
+function count(i){var n=0;neighbors(i).forEach(function(j){if(mine[j])n++;});return n;}
+function reveal(i){
+  if(open[i]||flag[i])return;
+  open[i]=true;
+  if(count(i)===0){neighbors(i).forEach(function(j){if(!open[j]&&!mine[j])reveal(j);});}
+}
+function draw(){for(var i=0;i<SZ*SZ;i++){var c=cells[i],t='';
+  if(open[i]){t=mine[i]?'💣':(count(i)||'');c.className='cell open'+(i===cur?' sel':'');}
+  else{t=flag[i]?'🚩':'';c.className='cell'+(i===cur?' sel':'');}
+  c.textContent=t;}
+  cells.forEach(function(x){x.style.borderWidth='1px';});
+  if(!over)cells[cur].style.borderWidth='3px';}
+function checkWin(){for(var i=0;i<SZ*SZ;i++){if(!mine[i]&&!open[i])return false;}return true;}
+function play(i){
+  if(over)return;
+  if(flag[i])return;
+  if(!started){started=true;layMines(i);}
+  if(mine[i]){over=true;for(var j=0;j<SZ*SZ;j++)if(mine[j])open[j]=true;draw();say('בום! אמצעי למשחק חדש');return;}
+  reveal(i);draw();
+  if(checkWin()){over=true;say('ניצחת! אמצעי לחדש');}
+}
+function toggleFlag(){if(over||open[cur])return;flag[cur]=!flag[cur];draw();}
+cells.forEach(function(c,i){c.addEventListener('click',function(){cur=i;play(i);});});
+document.addEventListener('keydown',function(e){
+  var k=e.key,r=Math.floor(cur/SZ),c=cur%SZ;
+  if(k==='ArrowUp'){cur=((r+SZ-1)%SZ)*SZ+c;draw();e.preventDefault();}
+  else if(k==='ArrowDown'){cur=((r+1)%SZ)*SZ+c;draw();e.preventDefault();}
+  else if(k==='ArrowLeft'){cur=r*SZ+((c+1)%SZ);draw();e.preventDefault();}
+  else if(k==='ArrowRight'){cur=r*SZ+((c+SZ-1)%SZ);draw();e.preventDefault();}
+  else if(k==='Enter'){if(over)reset();else play(cur);e.preventDefault();}
+  else if(k==='*'){toggleFlag();e.preventDefault();}
+});
+reset();
+</script>
+</body>
+</html>
