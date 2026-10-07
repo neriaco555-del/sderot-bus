@@ -1,0 +1,1 @@
+MIT License (c) shateers - doodlejump. Author states MIT License in project README (https://github.com/shateers/doodlejump). See full text at https://opensource.org/licenses/MIT

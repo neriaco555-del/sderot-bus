@@ -1,0 +1,1 @@
+MIT License (c) trzaskos - vanilla-js-tetris. Author states MIT License in project README (https://github.com/trzaskos/vanilla-js-tetris). See full text at https://opensource.org/licenses/MIT

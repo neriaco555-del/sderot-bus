@@ -1,0 +1,45 @@
+<!DOCTYPE HTML>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>דודל קפיצה</title>
+<link rel="stylesheet" href="style.css" />
+<style>
+body{max-width:240px;margin:0 auto;background:#111;color:#fff;font-family:sans-serif;text-align:center}
+.container{width:232px !important;margin:0 auto}
+canvas{width:232px !important;height:auto !important}
+#mainMenu,#gameOverMenu{width:232px !important}
+.backlink{display:block;background:#222;color:#fff !important;text-decoration:none;padding:8px;font-size:15px;margin:4px;text-align:center}
+.hint{font-size:12px;color:#bbb}
+.button:focus{outline:3px solid #fc0}
+</style>
+</head>
+<body>
+<a class="backlink" href="../../games.html">◀ כל המשחקים</a>
+<div class="container">
+<canvas id="canvas">HTML5 לא נתמך</canvas>
+<div id="mainMenu">
+<h1>doodle jump</h1>
+<p class="info">חצים לזוז · אמצעי להתחלה</p>
+<a class="button" href="javascript:init()">Play</a>
+</div>
+<div id="gameOverMenu">
+<h1>game over!</h1>
+<h3 id="go_score">you scored 0 points</h3>
+<a class="button" href="javascript:reset()">Restart</a>
+</div>
+<img id="sprite" src="sprite.png" style="display:none" />
+<div id="scoreBoard"><p id="score">0</p></div>
+</div>
+<div class="hint">דודל קוד פתוח (MIT) מאת shateers</div>
+<script src="script.js"></script>
+<script>
+document.addEventListener('keydown',function(e){
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].indexOf(e.key)>=0)e.preventDefault();
+  if(e.key==='Enter'){var a=document.activeElement;
+    if(a&&a.classList&&a.classList.contains('button'))a.click();}
+});
+</script>
+</body>
+</html>
