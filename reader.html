@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ספרייה</title>
+<style>
+body{margin:0;padding:4px;background:#111;color:#fff;font-family:sans-serif;max-width:240px}
+h1{font-size:18px;color:#fc0;margin:2px 0 8px}
+a.bk{display:block;background:#222;color:#fff;text-decoration:none;border:1px solid #444;padding:10px 6px;margin:0 0 6px;font-size:16px}
+a.bk:focus{border-color:#fc0}
+a.bk span{display:block;font-size:12px;color:#bbb}
+#txt{background:#000;border:1px solid #444;padding:8px;line-height:1.7;white-space:pre-wrap}
+#txt.s1{font-size:14px}#txt.s2{font-size:17px}#txt.s3{font-size:21px}
+button{font-size:16px;padding:8px 10px;margin:4px 2px;background:#333;color:#fff;border:1px solid #555}
+button:focus{border-color:#fc0}
+.nav{text-align:center}
+.meta{font-size:12px;color:#bbb;text-align:center}
+.top{font-size:14px}.top a{color:#8cf}
+</style>
+</head>
+<body>
+<div class="top"><a href="reader.html">◀ ספרייה</a></div>
+<h1 id="title">📚 ספרייה</h1>
+<div id="lib"></div>
+<div id="rd" style="display:none">
+<div id="txt" class="s2"></div>
+<div class="meta" id="pg"></div>
+<div class="nav">
+<button id="prev">הקודם ▶</button><button id="next">◀ הבא</button>
+</div>
+<div class="nav">
+<button id="f1">א</button><button id="f2">א+</button><button id="f3">א++</button>
+</div>
+</div>
+<script>
+var libEl=document.getElementById('lib'),rdEl=document.getElementById('rd'),
+txtEl=document.getElementById('txt'),pgEl=document.getElementById('pg'),
+titleEl=document.getElementById('title');
+var qs=(location.search.match(/[?&]b=([^&]+)/)||[])[1];
+var book=null,pages=[],pi=0;
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v);}catch(e){return null;}}
+function loadLib(){
+  fetch('books/books.json').then(function(r){return r.json();}).then(function(list){
+    libEl.innerHTML='';
+    list.forEach(function(b){
+      var a=document.createElement('a');a.className='bk';a.href='reader.html?b='+encodeURIComponent(b.file);
+      a.innerHTML=b.title+'<span>'+(b.author||'')+'</span>';
+      libEl.appendChild(a);
+    });
+    var f=libEl.querySelector('a');if(f)f.focus();
+  }).catch(function(){libEl.textContent='שגיאה בטעינת ספרייה.';});
+}
+function paginate(text){
+  var paras=text.split(/\n/),pages=[],cur='';
+  paras.forEach(function(p){
+    if((cur+'\n'+p).length>1100&&cur){pages.push(cur);cur=p;}
+    else cur=cur?cur+'\n'+p:p;
+  });
+  if(cur)pages.push(cur);
+  return pages;
+}
+function show(){
+  txtEl.textContent=pages[pi]||'';
+  pgEl.textContent='עמוד '+(pi+1)+' מתוך '+pages.length;
+  store('pos_'+book.file,String(pi));
+  window.scrollTo(0,0);
+}
+function go(d){var n=pi+d;if(n<0)n=0;if(n>=pages.length)n=pages.length-1;if(n!==pi){pi=n;show();}}
+function setFont(s){txtEl.className='s'+s;store('font',String(s));}
+function loadBook(file){
+  fetch('books/'+file).then(function(r){if(!r.ok)throw 0;return r.text();}).then(function(t){
+    return fetch('books/books.json').then(function(r){return r.json();}).then(function(list){
+      for(var i=0;i<list.length;i++)if(list[i].file===file)book=list[i];
+      if(!book)book={file:file,title:file};
+      titleEl.textContent='📖 '+book.title;
+      libEl.style.display='none';rdEl.style.display='block';
+      pages=paginate(t);
+      pi=parseInt(store('pos_'+file)||'0',10)||0;
+      if(pi>=pages.length)pi=0;
+      setFont(parseInt(store('font')||'2',10)||2);
+      show();
+    });
+  }).catch(function(){libEl.textContent='הספר לא נמצא.';});
+}
+document.getElementById('next').onclick=function(){go(1);};
+document.getElementById('prev').onclick=function(){go(-1);};
+document.getElementById('f1').onclick=function(){setFont(1);};
+document.getElementById('f2').onclick=function(){setFont(2);};
+document.getElementById('f3').onclick=function(){setFont(3);};
+document.addEventListener('keydown',function(e){
+  if(rdEl.style.display==='none')return;
+  if(e.key==='ArrowLeft'){go(1);e.preventDefault();}
+  else if(e.key==='ArrowRight'){go(-1);e.preventDefault();}
+});
+if(qs)loadBook(decodeURIComponent(qs));else loadLib();
+</script>
+</body>
+</html>
